@@ -1,9 +1,12 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import from_json, col 
+from pyspark.sql.functions import (
+    from_json, col, window, first, last, max as spark_max,
+    min as spark_min, sum as spark_sum, count, to_timestamp
+)
 from pyspark.sql.types import StructType, StringType, DoubleType, LongType
 
 spark = SparkSession.builder \
-    .appName("ReadStockTrades") \
+    .appName("StockOHLCAggregation") \
     .getOrCreate()
 
 spark.sparkContext.setLogLevel("WARN")
@@ -33,10 +36,40 @@ parsed_df = raw_df.select(
 ).select("data.*")
 
 
+# Convert epoch ms -> Spark timestamp (required for windowing/watermarking)
+trades_with_time = parsed_df.withColumn(
+    "event_time", to_timestamp(col("trade_timestamp") / 1000)
+)
+
+
+# Watermark: tolerate up to 2 minutes of late-arriving data
+watermarked = trades_with_time.withWatermark("event_time", "2 minutes")
+
+
+# 1-minute tumbling window, grouped per ticker
+ohlc = watermarked.groupBy(
+    window(col("event_time"), "1 minute"),
+    col("ticker")
+).agg(
+    first("price").alias("open"),
+    spark_max("price").alias("high"),
+    spark_min("price").alias("low"),
+    last("price").alias("close"),
+    spark_sum("volume").alias("total_volume"),
+    count("*").alias("trade_count")
+).select(
+    col("ticker"),
+    col("window.start").alias("window_start"),
+    col("window.end").alias("window_end"),
+    "open", "high", "low", "close", "total_volume", "trade_count"
+)
+
+
 #Write to console for debugging
-query = parsed_df.writeStream \
-    .outputMode("append") \
+query = ohlc.writeStream \
+    .outputMode("update") \
     .format("console") \
+    .option("truncate", False) \
     .start()
 
 
