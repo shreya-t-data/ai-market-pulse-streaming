@@ -65,11 +65,51 @@ ohlc = watermarked.groupBy(
 )
 
 
-#Write to console for debugging
+#Write to postgres
+def write_to_postgres(batch_df, batch_id):
+    print(f">>> Processing batch {batch_id}, row count: {batch_df.count()}")
+    batch_df.write \
+        .format("jdbc") \
+        .option("url", "jdbc:postgresql://localhost:5432/market_pulse") \
+        .option("dbtable", "gold.stock_ohlc_1min_staging") \
+        .option("user", "shreya") \
+        .option("password", "changeme123") \
+        .option("driver", "org.postgresql.Driver") \
+        .mode("overwrite") \
+        .save()
+
+
+    # Upsert from staging into real table
+    import psycopg2
+    conn = psycopg2.connect(
+        host="localhost", port=5432, dbname="market_pulse",
+        user="shreya", password="changeme123"
+    )
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO gold.stock_ohlc_1min (ticker, window_start, window_end, open, high, low, close, total_volume, trade_count, updated_at)
+        SELECT ticker, window_start, window_end, open, high, low, close, total_volume, trade_count, now()
+        FROM gold.stock_ohlc_1min_staging
+        ON CONFLICT (ticker, window_start)
+        DO UPDATE SET
+            window_end = EXCLUDED.window_end,
+            open = EXCLUDED.open,
+            high = EXCLUDED.high,
+            low = EXCLUDED.low,
+            close = EXCLUDED.close,
+            total_volume = EXCLUDED.total_volume,
+            trade_count = EXCLUDED.trade_count,
+            updated_at = now();
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
 query = ohlc.writeStream \
     .outputMode("update") \
-    .format("console") \
-    .option("truncate", False) \
+    .foreachBatch(write_to_postgres) \
+    .option("checkpointLocation", "./checkpoints/stock_ohlc") \
     .start()
 
 
