@@ -11,3 +11,4 @@ data/silver/*
 *.log
 checkpoints/
 spark-warehouse/
+logs/
