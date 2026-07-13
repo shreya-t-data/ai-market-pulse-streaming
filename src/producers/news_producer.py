@@ -29,6 +29,14 @@ producer = KafkaProducer(
 seen_urls = set() # simple in-memory dedup cache
 
 
+def is_duplicate(article_url, seen_set):
+    """Returns True if this URL has already been seen, False otherwise. Mutates seen_set."""
+    if not article_url or article_url in seen_set:
+        return True
+    seen_set.add(article_url)
+    return False
+
+
 def fetch_news(ticker):
     today = time.strftime("%Y-%m-%d")
     yesterday = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86400))
@@ -55,7 +63,7 @@ def poll_once():
         
         for article in articles:
             article_url = article.get("url")
-            if not article_url or article_url in seen_urls:
+            if is_duplicate(article_url, seen_urls):
                 continue
             seen_urls.add(article_url)
 
