@@ -16,14 +16,18 @@ POLL_INTERVAL_SECONDS = 300 # 5 minutes
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s %(message)s]")
 logger = logging.getLogger("news_producer")
 
-with open("config/tickers.yaml") as f:
-    TICKERS = yaml.safe_load(f)["tickers"]
 
-producer = KafkaProducer(
-    bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
-    key_serializer=lambda k: k.encode("utf-8"),
-    value_serializer=lambda v: json.dumps(v).encode("utf-8"),
+def get_producer():
+    return KafkaProducer(
+        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+        key_serializer=lambda k: k.encode("utf-8"),
+        value_serializer=lambda v: json.dumps(v).encode("utf-8"),
 )
+
+
+def load_tickers():
+    with open("config/tickers.yaml") as f:
+        return yaml.safe_load(f)["tickers"]
 
 
 seen_urls = set() # simple in-memory dedup cache
@@ -85,6 +89,8 @@ def poll_once():
 
 
 if __name__ == "__main__":
+    TICKERS = load_tickers()
+    producer = get_producer()
     logger.info("Starting news producer (polling every 5 mins)")
     while True:
         poll_once()
