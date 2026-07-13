@@ -25,7 +25,7 @@ jobs:
           python -c "import nltk; nltk.download('vader_lexicon')"
 
       - name: Lint with ruff
-        run: ruff chech src/ tests/ --exit-zero
+        run: ruff check src/ tests/ --exit-zero
 
       - name: Run unit tests
         run: pytest tests/ -v
